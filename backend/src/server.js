@@ -6,14 +6,14 @@ const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const passport = require('passport');
-const { connectDB } = require('./src/config/db/migrations/001_multi_tenant_schema.sql');
-const configurePassport = require('./src/services/passport');
-const registerSockets = require('./src/services/socketService');
-const authenticateToken = require('./src/middleware/auth');
-const setPostgresSession = require('./src/middleware/postgresSession');
-const checkSubscription = require('./src/middleware/subscription');
-const { checkRole } = require('./src/middleware/role');
-const { apiRateLimiter } = require('./src/middleware/rateLimiter');
+const { connectDB } = require('./config/db');
+const configurePassport = require('./services/passport');
+const registerSockets = require('./services/socketService');
+const authenticateToken = require('./middleware/auth');
+const setPostgresSession = require('./middleware/postgresSession');
+const checkSubscription = require('./middleware/subscription');
+const { checkRole } = require('./middleware/role');
+const { apiRateLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 const server = http.createServer(app);
@@ -39,7 +39,7 @@ app.use(cors(corsOptions));
 app.use(cookieParser());
 app.use(passport.initialize());
 
-app.use('/api/webhooks/paystack', express.raw({ type: 'application/json' }), require('./src/routes/webhooks'));
+app.use('/api/webhooks/paystack', express.raw({ type: 'application/json' }), require('./routes/webhooks'));
 
 app.use(express.json({ limit: '1mb' }));
 app.use(apiRateLimiter);
@@ -48,9 +48,9 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'marketplace-api' });
 });
 
-app.use('/api/auth', require('./src/routes/auth'));
-app.use('/api/plans', require('./src/routes/plans'));
-app.use('/api/store', require('./src/routes/storefront'));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/plans', require('./routes/plans'));
+app.use('/api/store', require('./routes/storefront'));
 
 app.use(
   '/api/seller',
@@ -58,22 +58,22 @@ app.use(
   setPostgresSession,
   checkRole('seller'),
   checkSubscription,
-  require('./src/routes/seller'),
+  require('./routes/seller'),
 );
 app.use(
   '/api/subscriptions',
   authenticateToken,
   setPostgresSession,
   checkRole('seller'),
-  require('./src/routes/subscriptions'),
+  require('./routes/subscriptions'),
 );
-app.use('/api/tickets', authenticateToken, setPostgresSession, require('./src/routes/tickets'));
+app.use('/api/tickets', authenticateToken, setPostgresSession, require('./routes/tickets'));
 app.use(
   '/api/admin',
   authenticateToken,
   setPostgresSession,
   checkRole('super_admin'),
-  require('./src/routes/admin'),
+  require('./routes/admin'),
 );
 
 app.use((req, res) => {
