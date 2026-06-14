@@ -1,5 +1,8 @@
-require('dotenv').config();
+require('dotenv').config({ path:'../.env'});
+console.log('DATABASE_URL:', process.env.DATABASE_URL);
+// ... rest of your code
 const express = require('express');
+const pool = require('./config/db');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
@@ -76,6 +79,48 @@ app.use(
   require('./routes/admin'),
 );
 
+app.use(express.json()); // lets Express read JSON from Postman
+
+// app.post('/register', async (req, res) => {
+//   const { email, password } = req.body;
+//   const bcrypt = require('bcrypt');
+  
+//   try {
+//     const hashedPassword = await bcrypt.hash(password, 10);
+//     const result = await pool.query(
+//       'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
+//       [email, hashedPassword]
+//     );
+//     res.status(201).json(result.rows[0]);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+app.get('/register', async (req, res) => {
+  const { email, password } = req.query; // <-- use query instead of body
+  const bcrypt = require('bcrypt');
+  
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
+      [email, hashedPassword]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+// Test route
+app.get('/', (req, res) => {
+  res.json({ message: 'Marketplace API Running 🚀' });
+});
+
+// Keep your 404 handler at the very bottom
+app.use((req, res) => {
+  res.status(404).json({ message: 'Route not found' });
+});
+
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
@@ -88,6 +133,9 @@ app.use((error, _req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 5000;
+pool.query('SELECT NOW()', (err, res) => {
+  console.log('DB Time:', res.rows[0]);
+});
 if (process.env.NODE_ENV !== 'test') {
   connectDB()
     .then(() => {
