@@ -57,7 +57,7 @@ onMounted(load);
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <article v-for="plan in plans" :key="plan.id" class="panel">
         <h2 class="font-semibold">{{ plan.name }}</h2>
-        <p class="mt-2 text-2xl font-semibold">₦{{ plan.price }}</p>
+        <p class="mt-2 text-2xl font-semibold">NGN {{ plan.price }}</p>
         <p class="muted mt-2">{{ plan.max_products || 'Unlimited' }} products</p>
         <div class="mt-3 flex flex-wrap gap-2">
           <span v-for="feature in plan.features" :key="feature" class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{{ feature }}</span>

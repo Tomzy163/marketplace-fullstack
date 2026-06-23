@@ -32,7 +32,7 @@ onMounted(() => seller.loadDashboard());
       </div>
       <div class="panel">
         <LineChart class="h-5 w-5 text-cyan-600" />
-        <p class="mt-3 text-2xl font-semibold">₦{{ seller.dashboard?.metrics.revenue || 0 }}</p>
+        <p class="mt-3 text-2xl font-semibold">NGN {{ seller.dashboard?.metrics.revenue || 0 }}</p>
         <p class="muted">Revenue</p>
       </div>
       <div class="panel">

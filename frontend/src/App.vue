@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { RouterLink, RouterView, useRouter } from 'vue-router';
 import { LayoutDashboard, LogOut, MessageCircle, ShieldCheck, ShoppingBag, Store } from 'lucide-vue-next';
 import { useAuthStore } from './stores/auth';
+import { policies } from './data/policies';
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -54,5 +55,19 @@ async function logout() {
     <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       <RouterView />
     </main>
+
+    <footer class="border-t border-slate-200 bg-white">
+      <div class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
+        <div class="flex items-center gap-2 text-sm font-semibold text-slate-700">
+          <Store class="h-4 w-4 text-emerald-600" />
+          MarketWorld
+        </div>
+        <nav class="flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-500">
+          <RouterLink v-for="policy in policies" :key="policy.slug" class="hover:text-emerald-700" :to="`/policies/${policy.slug}`">
+            {{ policy.title }}
+          </RouterLink>
+        </nav>
+      </div>
+    </footer>
   </div>
 </template>

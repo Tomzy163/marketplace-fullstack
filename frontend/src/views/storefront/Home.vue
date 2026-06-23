@@ -78,7 +78,7 @@ watch(
         </div>
         <h3 class="mt-3 font-semibold">{{ product.name }}</h3>
         <p class="muted">{{ product.category }}</p>
-        <p class="mt-2 font-semibold">₦{{ product.price }}</p>
+        <p class="mt-2 font-semibold">NGN {{ product.price }}</p>
       </RouterLink>
     </div>
   </section>

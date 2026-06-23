@@ -1,5 +1,7 @@
 const { Pool } = require('pg');
-require('dotenv').config({ path: '../.env' });
+const path = require('path');
+
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -30,7 +32,7 @@ async function setTenantContext(client, { userId, sellerId, role } = {}) {
 }
 
 async function connectDB() {
-  await query('SELECT 1');
+  await query('SELECT 1 AS ok');
   console.log('PostgreSQL connected');
 }
 

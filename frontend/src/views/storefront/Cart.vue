@@ -21,7 +21,7 @@ const total = computed(() => cart.total(route.params.slug));
       <div v-for="item in items" :key="item.id" class="flex flex-wrap items-center justify-between gap-4 py-4">
         <div>
           <h2 class="font-semibold">{{ item.name }}</h2>
-          <p class="muted">₦{{ item.price }}</p>
+          <p class="muted">NGN {{ item.price }}</p>
         </div>
         <div class="flex items-center gap-3">
           <input class="input w-24" type="number" min="0" :value="item.quantity" @input="cart.update(route.params.slug, item.id, Number($event.target.value))" />
@@ -34,7 +34,7 @@ const total = computed(() => cart.total(route.params.slug));
     </div>
 
     <div class="panel flex flex-wrap items-center justify-between gap-3">
-      <p class="text-xl font-semibold">₦{{ total }}</p>
+      <p class="text-xl font-semibold">NGN {{ total }}</p>
       <RouterLink class="button" :class="{ 'pointer-events-none opacity-50': !items.length }" :to="`/store/${route.params.slug}/checkout`">Checkout</RouterLink>
     </div>
   </section>

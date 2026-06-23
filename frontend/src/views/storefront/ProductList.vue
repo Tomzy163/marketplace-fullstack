@@ -25,7 +25,7 @@ onMounted(async () => {
         </div>
         <h2 class="mt-3 font-semibold">{{ product.name }}</h2>
         <p class="muted">{{ product.category }}</p>
-        <p class="mt-2 font-semibold">₦{{ product.price }}</p>
+        <p class="mt-2 font-semibold">NGN {{ product.price }}</p>
       </RouterLink>
     </div>
   </section>

@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { Plus } from 'lucide-vue-next';
 import { useSellerStore } from '../../stores/seller';
+import { formatApiError } from '../../utils/errors';
 
 const seller = useSellerStore();
 const form = ref({
@@ -15,7 +16,13 @@ const form = ref({
 });
 const error = ref('');
 
-onMounted(() => seller.loadProducts());
+onMounted(async () => {
+  try {
+    await seller.loadProducts();
+  } catch (err) {
+    error.value = formatApiError(err, 'Could not load products');
+  }
+});
 
 async function createProduct() {
   error.value = '';
@@ -29,7 +36,7 @@ async function createProduct() {
     });
     form.value = { name: '', description: '', price: 0, stock: 0, category: '', images: '', lowStockThreshold: 5 };
   } catch (err) {
-    error.value = err.response?.data?.message || 'Could not create product';
+    error.value = formatApiError(err, 'Could not create product');
   }
 }
 </script>
@@ -68,7 +75,7 @@ async function createProduct() {
           <tr v-for="product in seller.products" :key="product.id">
             <td class="table-cell font-medium">{{ product.name }}</td>
             <td class="table-cell">{{ product.category || 'Uncategorized' }}</td>
-            <td class="table-cell">₦{{ product.price }}</td>
+            <td class="table-cell">NGN {{ product.price }}</td>
             <td class="table-cell">{{ product.stock }}</td>
           </tr>
         </tbody>

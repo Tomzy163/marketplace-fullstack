@@ -31,10 +31,15 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401 && !original?._retry && !isRefreshRequest) {
       original._retry = true;
-      const { data } = await api.post('/auth/refresh');
-      setAccessToken(data.accessToken);
-      original.headers.Authorization = `Bearer ${data.accessToken}`;
-      return api(original);
+      try {
+        const { data } = await api.post('/auth/refresh');
+        setAccessToken(data.accessToken);
+        original.headers.Authorization = `Bearer ${data.accessToken}`;
+        return api(original);
+      } catch (refreshError) {
+        setAccessToken('');
+        return Promise.reject(refreshError);
+      }
     }
 
     return Promise.reject(error);

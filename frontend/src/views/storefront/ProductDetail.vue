@@ -28,7 +28,7 @@ function addToCart() {
     <div class="panel">
       <p class="muted">{{ product.category }}</p>
       <h1 class="mt-2 text-3xl font-semibold tracking-normal">{{ product.name }}</h1>
-      <p class="mt-4 text-2xl font-semibold">₦{{ product.price }}</p>
+      <p class="mt-4 text-2xl font-semibold">NGN {{ product.price }}</p>
       <p class="mt-4 text-slate-600">{{ product.description }}</p>
       <div class="mt-6 flex items-center gap-3">
         <input v-model.number="quantity" class="input max-w-28" type="number" min="1" :max="product.stock" />

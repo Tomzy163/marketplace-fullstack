@@ -26,7 +26,7 @@ onMounted(() => seller.loadOrders());
           <td class="table-cell font-mono text-xs">{{ order.id }}</td>
           <td class="table-cell">{{ order.customer_email }}</td>
           <td class="table-cell">{{ order.item_count }}</td>
-          <td class="table-cell">₦{{ order.total }}</td>
+          <td class="table-cell">NGN {{ order.total }}</td>
           <td class="table-cell">
             <span class="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{{ order.status }}</span>
           </td>

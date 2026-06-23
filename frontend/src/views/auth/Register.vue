@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useRouter, RouterLink } from 'vue-router';
 import { UserPlus } from 'lucide-vue-next';
 import { useAuthStore } from '../../stores/auth';
+import { formatApiError } from '../../utils/errors';
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -15,22 +16,43 @@ const form = ref({
 });
 const error = ref('');
 const loading = ref(false);
+const acceptedPolicies = ref(false);
 const isSeller = computed(() => role.value === 'seller');
+
+function normalizeSlug(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
 
 function syncSlug() {
   if (!form.value.slug) {
-    form.value.slug = form.value.storeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    form.value.slug = normalizeSlug(form.value.storeName);
   }
 }
 
 async function submit() {
   error.value = '';
+  if (!acceptedPolicies.value) {
+    error.value = 'Please accept the Terms of Use and Privacy Policy to continue.';
+    return;
+  }
+
   loading.value = true;
   try {
-    await auth.register({ ...form.value, role: role.value });
+    const payload = {
+      email: form.value.email.trim(),
+      password: form.value.password,
+      role: role.value,
+    };
+
+    if (isSeller.value) {
+      payload.storeName = form.value.storeName.trim();
+      payload.slug = normalizeSlug(form.value.slug || form.value.storeName);
+    }
+
+    await auth.register(payload);
     router.push(isSeller.value ? '/seller/subscribe' : '/');
   } catch (err) {
-    error.value = err.response?.data?.message || 'Registration failed';
+    error.value = formatApiError(err, 'Registration failed');
   } finally {
     loading.value = false;
   }
@@ -47,12 +69,21 @@ async function submit() {
       </div>
 
       <form class="mt-5 space-y-4" @submit.prevent="submit">
-        <input v-model="form.email" class="input" type="email" placeholder="Email" autocomplete="email" required />
-        <input v-model="form.password" class="input" type="password" placeholder="Password" autocomplete="new-password" required />
+        <input v-model.trim="form.email" class="input" type="email" placeholder="Email" autocomplete="email" required />
+        <input v-model="form.password" class="input" type="password" placeholder="Password" autocomplete="new-password" minlength="8" required />
         <template v-if="isSeller">
           <input v-model="form.storeName" class="input" type="text" placeholder="Store name" required @blur="syncSlug" />
-          <input v-model="form.slug" class="input" type="text" placeholder="store-slug" required />
+          <input v-model.trim="form.slug" class="input" type="text" pattern="[a-z0-9-]{3,80}" placeholder="store-slug" required @blur="form.slug = normalizeSlug(form.slug)" />
         </template>
+        <label class="flex items-start gap-2 text-sm text-slate-600">
+          <input v-model="acceptedPolicies" class="mt-1" type="checkbox" required />
+          <span>
+            I agree to the
+            <RouterLink class="font-semibold text-emerald-700" to="/policies/terms-of-use">Terms of Use</RouterLink>
+            and
+            <RouterLink class="font-semibold text-emerald-700" to="/policies/privacy-policy">Privacy Policy</RouterLink>.
+          </span>
+        </label>
         <p v-if="error" class="text-sm font-medium text-red-600">{{ error }}</p>
         <button class="button w-full" type="submit" :disabled="loading">
           <UserPlus class="h-4 w-4" />

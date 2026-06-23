@@ -17,23 +17,23 @@ const {
 } = require('../utils/tokens');
 
 const registerSchema = Joi.object({
-  email: Joi.string().email().required(),
-  password: Joi.string().min(8).required(),
+  email: Joi.string().trim().lowercase().email().required(),
+  password: Joi.string().min(8).max(128).required(),
   role: Joi.string().valid('seller', 'customer').default('customer'),
   storeName: Joi.when('role', {
     is: 'seller',
-    then: Joi.string().min(2).max(120).required(),
-    otherwise: Joi.string().optional(),
+    then: Joi.string().trim().min(2).max(120).required(),
+    otherwise: Joi.any().strip(),
   }),
   slug: Joi.when('role', {
     is: 'seller',
-    then: Joi.string().pattern(/^[a-z0-9-]+$/).min(3).max(80).required(),
-    otherwise: Joi.string().optional(),
+    then: Joi.string().trim().lowercase().pattern(/^[a-z0-9-]+$/).min(3).max(80).required(),
+    otherwise: Joi.any().strip(),
   }),
 });
 
 const loginSchema = Joi.object({
-  email: Joi.string().email().required(),
+  email: Joi.string().trim().lowercase().email().required(),
   password: Joi.string().required(),
 });
 
@@ -79,7 +79,7 @@ router.post(
         `INSERT INTO users (email, password_hash, role)
          VALUES ($1, $2, $3)
          RETURNING id, email, role`,
-        [req.body.email.toLowerCase(), passwordHash, req.body.role],
+        [req.body.email, passwordHash, req.body.role],
       );
 
       let user = createdUser.rows[0];
@@ -134,8 +134,8 @@ router.post(
       `SELECT u.id, u.email, u.password_hash, u.role, s.id AS seller_id, s.subscription_status
          FROM users u
          LEFT JOIN sellers s ON s.user_id = u.id
-        WHERE u.email = $1`,
-      [req.body.email.toLowerCase()],
+       WHERE u.email = $1`,
+      [req.body.email],
     );
 
     const user = rows[0];

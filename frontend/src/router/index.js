@@ -22,6 +22,7 @@ import PlanManager from '../views/admin/PlanManager.vue';
 import AgentManager from '../views/admin/AgentManager.vue';
 import AuditLog from '../views/admin/AuditLog.vue';
 import Unauthorized from '../views/Unauthorized.vue';
+import PolicyPage from '../views/policies/PolicyPage.vue';
 
 const routes = [
   { path: '/', component: StorefrontHome },
@@ -29,6 +30,7 @@ const routes = [
   { path: '/register', component: Register },
   { path: '/oauth/callback', component: OAuthCallback },
   { path: '/unauthorized', component: Unauthorized },
+  { path: '/policies/:slug', component: PolicyPage },
   { path: '/seller/subscribe', component: SellerSubscribe, meta: { requiresSellerAccount: true } },
   { path: '/seller/dashboard', component: SellerDashboard, meta: { requiresSeller: true } },
   { path: '/seller/products', component: SellerProducts, meta: { requiresSeller: true } },
