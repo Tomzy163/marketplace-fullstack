@@ -1,11 +1,13 @@
 const Joi = require('joi');
 const router = require('express').Router();
+const { env } = require('../config/env');
 const asyncHandler = require('../middleware/asyncHandler');
 const validate = require('../middleware/validate');
 const { auditLog } = require('../services/auditService');
+const { adminOverrideSummary } = require('../services/adminOverrideService');
 
 const sellerStatusSchema = Joi.object({
-  subscriptionStatus: Joi.string().valid('pending', 'active', 'expired', 'cancelled').optional(),
+  subscriptionStatus: Joi.string().valid('pending', 'trialing', 'active', 'expired', 'cancelled').optional(),
   verified: Joi.boolean().optional(),
 }).or('subscriptionStatus', 'verified');
 
@@ -30,10 +32,20 @@ router.get(
     const { rows } = await req.db.query(
       `SELECT s.id, s.store_name, s.slug, s.subscription_status, s.verified_at, s.created_at,
               u.email AS owner_email,
-              p.name AS plan_name
+              u.id AS owner_id,
+              p.name AS plan_name,
+              latest.status AS latest_subscription_status,
+              latest.expires_at AS subscription_expires_at
          FROM sellers s
          JOIN users u ON u.id = s.user_id
          LEFT JOIN plans p ON p.id = s.plan_id
+         LEFT JOIN LATERAL (
+           SELECT status, expires_at
+             FROM subscriptions sub
+            WHERE sub.seller_id = s.id
+            ORDER BY created_at DESC
+            LIMIT 1
+         ) latest ON true
         ORDER BY s.created_at DESC`,
     );
 
@@ -89,6 +101,40 @@ router.get(
     );
 
     res.json(rows);
+  }),
+);
+
+router.get(
+  '/system-config',
+  asyncHandler(async (_req, res) => {
+    res.json({
+      appName: env.APP_NAME,
+      frontendUrl: env.FRONTEND_URL,
+      allowedOrigins: env.allowedOrigins,
+      trial: {
+        enabled: env.TRIAL_ENABLED,
+        days: env.TRIAL_DAYS,
+        planName: env.TRIAL_PLAN_NAME,
+      },
+      adminPremiumOverride: adminOverrideSummary(),
+      security: {
+        accessTokenTtl: env.ACCESS_TOKEN_TTL,
+        refreshTokenDays: env.REFRESH_TOKEN_DAYS,
+        refreshCookieName: env.REFRESH_COOKIE_NAME,
+        refreshCookieSameSite: env.REFRESH_COOKIE_SAMESITE,
+        refreshCookieSecure: env.REFRESH_COOKIE_SECURE,
+        authRateLimitMax: env.AUTH_RATE_LIMIT_MAX,
+        apiRateLimitMax: env.API_RATE_LIMIT_MAX,
+        trustProxy: env.TRUST_PROXY,
+      },
+      providers: {
+        paystackConfigured: Boolean(env.PAYSTACK_SECRET_KEY),
+        googleConfigured: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+        sendgridConfigured: Boolean(env.SENDGRID_API_KEY),
+        smtpConfigured: Boolean(env.SMTP_HOST),
+        cloudinaryConfigured: Boolean(env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY),
+      },
+    });
   }),
 );
 

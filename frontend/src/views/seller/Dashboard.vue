@@ -1,10 +1,23 @@
 <script setup>
+import { computed } from 'vue';
 import { onMounted } from 'vue';
 import { RouterLink } from 'vue-router';
 import { AlertTriangle, Boxes, LineChart, ReceiptText } from 'lucide-vue-next';
 import { useSellerStore } from '../../stores/seller';
 
 const seller = useSellerStore();
+const access = computed(() => seller.dashboard?.subscription || null);
+const accessLabel = computed(() => {
+  if (access.value?.accessSource === 'admin_override') return 'Administrative premium access';
+  if (access.value?.accessSource === 'trial') return `${access.value.trialDaysRemaining || 0} trial days remaining`;
+  if (access.value?.accessSource === 'paid') return 'Paid subscription active';
+  return 'Subscription inactive';
+});
+
+function formatDate(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleDateString();
+}
 
 onMounted(() => seller.loadDashboard());
 </script>
@@ -17,6 +30,19 @@ onMounted(() => seller.loadDashboard());
         <p class="muted">{{ seller.dashboard?.seller?.slug }}</p>
       </div>
       <RouterLink class="button-secondary" to="/seller/products">Products</RouterLink>
+    </div>
+
+    <div v-if="access" class="panel flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <p class="text-sm font-semibold text-slate-950">{{ accessLabel }}</p>
+        <p class="muted">
+          {{ access.plan?.name || seller.dashboard?.seller?.plan_name || 'Plan pending' }}
+          <span v-if="access.subscriptionExpiresAt">expires {{ formatDate(access.subscriptionExpiresAt) }}</span>
+        </p>
+      </div>
+      <RouterLink v-if="access.accessSource !== 'admin_override'" class="button-secondary" to="/seller/subscribe">
+        Manage plan
+      </RouterLink>
     </div>
 
     <div class="grid gap-4 md:grid-cols-4">

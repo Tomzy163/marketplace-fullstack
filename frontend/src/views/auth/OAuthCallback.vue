@@ -12,7 +12,7 @@ onMounted(async () => {
   if (token) {
     auth.applyOAuthToken(token);
     await auth.refresh();
-    router.replace(auth.isSeller ? '/seller/subscribe' : '/');
+    router.replace(auth.isSeller && auth.hasPremiumAccess ? '/seller/dashboard' : auth.isSeller ? '/seller/subscribe' : '/');
     return;
   }
   router.replace('/login');

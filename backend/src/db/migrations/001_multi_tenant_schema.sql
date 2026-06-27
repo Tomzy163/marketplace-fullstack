@@ -79,7 +79,7 @@ CREATE TABLE sellers (
   store_name text NOT NULL,
   slug text NOT NULL UNIQUE,
   subscription_status text NOT NULL DEFAULT 'pending'
-    CHECK (subscription_status IN ('pending', 'active', 'expired', 'cancelled')),
+    CHECK (subscription_status IN ('pending', 'trialing', 'active', 'expired', 'cancelled', 'admin_override')),
   plan_id uuid REFERENCES plans(id),
   verified_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -93,7 +93,7 @@ CREATE TABLE subscriptions (
   paystack_subscription_code text,
   paystack_email_token text,
   status text NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'trialing', 'active', 'expired', 'cancelled')),
+    CHECK (status IN ('pending', 'trialing', 'active', 'expired', 'cancelled', 'admin_override')),
   expires_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -196,6 +196,7 @@ CREATE TABLE audit_logs (
 CREATE INDEX sellers_user_id_idx ON sellers(user_id);
 CREATE INDEX sellers_slug_idx ON sellers(slug);
 CREATE INDEX subscriptions_seller_id_idx ON subscriptions(seller_id);
+CREATE INDEX subscriptions_seller_status_expires_idx ON subscriptions(seller_id, status, expires_at DESC);
 CREATE INDEX products_seller_id_idx ON products(seller_id);
 CREATE INDEX customers_seller_id_idx ON customers(seller_id);
 CREATE INDEX customers_user_id_idx ON customers(user_id);
@@ -307,7 +308,7 @@ CREATE POLICY sellers_scope ON sellers
     OR (
       app.current_role() = 'storefront'
       AND id = app.current_seller_id()
-      AND subscription_status = 'active'
+      AND subscription_status IN ('active', 'trialing', 'admin_override')
     )
     OR EXISTS (
       SELECT 1 FROM agent_assignments aa

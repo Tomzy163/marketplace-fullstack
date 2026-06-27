@@ -4,12 +4,65 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { verifyPaystackSignature } = require('../utils/security');
 const { sendEmail } = require('../services/emailService');
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function cleanUuid(value) {
+  const text = String(value || '');
+  return uuidPattern.test(text) ? text : null;
+}
+
+function subscriptionCode(data) {
+  return data.subscription?.subscription_code || data.subscription_code || null;
+}
+
+function emailToken(data) {
+  return data.subscription?.email_token || data.email_token || null;
+}
+
+function renewalExpiry(data) {
+  const candidates = [
+    data.subscription?.next_payment_date,
+    data.next_payment_date,
+    data.next_payment_at,
+    data.paid_at,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const parsed = new Date(candidate);
+    if (!Number.isNaN(parsed.getTime()) && parsed > new Date()) {
+      return parsed;
+    }
+  }
+
+  const fallback = new Date();
+  fallback.setDate(fallback.getDate() + 30);
+  return fallback;
+}
+
 async function activateSubscription(event) {
   const metadata = event.data.metadata || {};
-  const subscriptionCode = event.data.subscription?.subscription_code || event.data.subscription_code || null;
-  const emailToken = event.data.subscription?.email_token || event.data.email_token || null;
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 30);
+  const code = subscriptionCode(event.data);
+  const token = emailToken(event.data);
+  const expiresAt = renewalExpiry(event.data);
+  const metadataSubscriptionId = cleanUuid(metadata.subscriptionId);
+  let sellerId = cleanUuid(metadata.sellerId);
+  let planId = cleanUuid(metadata.planId);
+
+  if ((!sellerId || !planId) && code) {
+    const existing = await query(
+      `SELECT seller_id, plan_id
+         FROM subscriptions
+        WHERE paystack_subscription_code = $1
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [code],
+    );
+    sellerId = sellerId || existing.rows[0]?.seller_id || null;
+    planId = planId || existing.rows[0]?.plan_id || null;
+  }
+
+  if (!sellerId || !planId) return;
 
   await query(
     `UPDATE subscriptions
@@ -19,14 +72,15 @@ async function activateSubscription(event) {
             expires_at = $3,
             updated_at = now()
       WHERE id = $1
+         OR ($4::text IS NOT NULL AND paystack_subscription_code = $4)
          OR (seller_id = $2 AND plan_id = $6 AND status = 'pending')`,
     [
-      metadata.subscriptionId || null,
-      metadata.sellerId,
+      metadataSubscriptionId,
+      sellerId,
       expiresAt,
-      subscriptionCode,
-      emailToken,
-      metadata.planId || null,
+      code,
+      token,
+      planId,
     ],
   );
 
@@ -35,7 +89,7 @@ async function activateSubscription(event) {
         SET subscription_status = 'active',
             plan_id = $2
       WHERE id = $1`,
-    [metadata.sellerId, metadata.planId],
+    [sellerId, planId],
   );
 }
 
@@ -84,25 +138,26 @@ async function confirmOrder(event) {
   }
 }
 
-async function expireSubscription(event) {
-  const subscriptionCode = event.data.subscription_code || event.data.subscription?.subscription_code;
-  if (!subscriptionCode) return;
+async function closeSubscription(event, status) {
+  const code = subscriptionCode(event.data);
+  if (!code) return;
 
   const { rows } = await query(
     `UPDATE subscriptions
-        SET status = 'expired',
+        SET status = $2,
             updated_at = now()
       WHERE paystack_subscription_code = $1
       RETURNING seller_id`,
-    [subscriptionCode],
+    [code, status],
   );
 
   if (rows[0]) {
     await query(
       `UPDATE sellers
-          SET subscription_status = 'expired'
+          SET subscription_status = $2,
+              updated_at = now()
         WHERE id = $1`,
-      [rows[0].seller_id],
+      [rows[0].seller_id, status],
     );
   }
 }
@@ -120,7 +175,7 @@ router.post(
     const event = JSON.parse(rawBody.toString('utf8'));
 
     if (event.event === 'charge.success') {
-      if (event.data.metadata?.type === 'subscription') {
+      if (event.data.metadata?.type === 'subscription' || subscriptionCode(event.data)) {
         await activateSubscription(event);
       }
       if (event.data.metadata?.type === 'order') {
@@ -132,8 +187,12 @@ router.post(
       await activateSubscription(event);
     }
 
-    if (event.event === 'subscription.disable' || event.event === 'invoice.payment_failed') {
-      await expireSubscription(event);
+    if (event.event === 'subscription.disable') {
+      await closeSubscription(event, 'cancelled');
+    }
+
+    if (event.event === 'invoice.payment_failed') {
+      await closeSubscription(event, 'expired');
     }
 
     return res.status(200).json({ received: true });

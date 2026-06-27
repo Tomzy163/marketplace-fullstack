@@ -1,18 +1,20 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const { env } = require('../config/env');
 const { query } = require('../config/db');
+const { grantInitialSellerAccess } = require('./subscriptionService');
 
 function configurePassport() {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
     return passport;
   }
 
   passport.use(
     new GoogleStrategy(
       {
-        clientID: process.env.GOOGLE_CLIENT_ID,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback',
+        clientID: env.GOOGLE_CLIENT_ID,
+        clientSecret: env.GOOGLE_CLIENT_SECRET,
+        callbackURL: env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback',
         passReqToCallback: true,
       },
       async (req, _accessToken, _refreshToken, profile, done) => {
@@ -45,12 +47,26 @@ function configurePassport() {
           }
 
           if (requestedRole === 'seller') {
-            await query(
+            const slugBase = email
+              .split('@')[0]
+              .replace(/[^a-z0-9]+/gi, '-')
+              .replace(/(^-|-$)/g, '')
+              .toLowerCase();
+            const seller = await query(
               `INSERT INTO sellers (user_id, store_name, slug, subscription_status)
                VALUES ($1, $2, $3, 'pending')
-               ON CONFLICT (user_id) DO NOTHING`,
-              [user.id, profile.displayName || email, email.split('@')[0].replace(/[^a-z0-9]+/gi, '-').toLowerCase()],
+               ON CONFLICT (user_id) DO NOTHING
+               RETURNING id`,
+              [user.id, profile.displayName || email, `${slugBase}-${String(user.id).slice(0, 8)}`],
             );
+
+            if (seller.rows[0]) {
+              await grantInitialSellerAccess({ query }, {
+                id: user.id,
+                email: user.email,
+                seller_id: seller.rows[0].id,
+              });
+            }
           }
 
           return done(null, user);

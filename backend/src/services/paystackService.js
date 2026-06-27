@@ -1,16 +1,17 @@
 const axios = require('axios');
+const { env } = require('../config/env');
 
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 
 function paystackClient() {
-  if (!process.env.PAYSTACK_SECRET_KEY) {
+  if (!env.PAYSTACK_SECRET_KEY) {
     throw new Error('PAYSTACK_SECRET_KEY is not configured');
   }
 
   return axios.create({
     baseURL: PAYSTACK_BASE_URL,
     headers: {
-      Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`,
       'Content-Type': 'application/json',
     },
   });

@@ -1,9 +1,7 @@
 const { Pool } = require('pg');
-const path = require('path');
+const { env } = require('./env');
 
-require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
-
-const connectionString = process.env.DATABASE_URL;
+const connectionString = env.DATABASE_URL;
 
 if (!connectionString) {
   console.warn('DATABASE_URL is not set. PostgreSQL queries will fail until it is configured.');
@@ -11,7 +9,7 @@ if (!connectionString) {
 
 const pool = new Pool({
   connectionString,
-  ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : undefined,
+  ssl: env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : undefined,
 });
 
 pool.on('error', (error) => {

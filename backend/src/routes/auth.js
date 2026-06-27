@@ -2,11 +2,17 @@ const bcrypt = require('bcryptjs');
 const Joi = require('joi');
 const passport = require('passport');
 const router = require('express').Router();
+const { env } = require('../config/env');
 const { getClient, query } = require('../config/db');
 const validate = require('../middleware/validate');
 const asyncHandler = require('../middleware/asyncHandler');
 const { authRateLimiter } = require('../middleware/rateLimiter');
 const { auditLog } = require('../services/auditService');
+const {
+  buildAccess,
+  grantInitialSellerAccess,
+  syncSellerAccess,
+} = require('../services/subscriptionService');
 const {
   clearRefreshCookie,
   generateRefreshToken,
@@ -37,13 +43,18 @@ const loginSchema = Joi.object({
   password: Joi.string().required(),
 });
 
-function publicUser(user) {
+function publicUser(user, access = buildAccess(user)) {
   return {
     id: user.id,
     email: user.email,
     role: user.role,
     sellerId: user.seller_id || null,
-    subscriptionStatus: user.subscription_status || null,
+    subscriptionStatus: access.subscriptionStatus || user.subscription_status || null,
+    subscriptionExpiresAt: access.subscriptionExpiresAt || user.subscription_expires_at || null,
+    hasPremiumAccess: access.hasAccess,
+    accessSource: access.accessSource,
+    trialDaysRemaining: access.trialDaysRemaining,
+    plan: access.plan,
   };
 }
 
@@ -74,7 +85,7 @@ router.post(
     try {
       await client.query('BEGIN');
 
-      const passwordHash = await bcrypt.hash(req.body.password, 12);
+      const passwordHash = await bcrypt.hash(req.body.password, env.PASSWORD_BCRYPT_ROUNDS);
       const createdUser = await client.query(
         `INSERT INTO users (email, password_hash, role)
          VALUES ($1, $2, $3)
@@ -83,6 +94,7 @@ router.post(
       );
 
       let user = createdUser.rows[0];
+      let access = buildAccess({ subscription_status: null });
 
       if (req.body.role === 'seller') {
         const seller = await client.query(
@@ -96,6 +108,14 @@ router.post(
           seller_id: seller.rows[0].id,
           subscription_status: seller.rows[0].subscription_status,
         };
+
+        access = await grantInitialSellerAccess(client, {
+          id: user.id,
+          email: user.email,
+          seller_id: seller.rows[0].id,
+        });
+        user.subscription_status = access.subscriptionStatus;
+        user.subscription_expires_at = access.subscriptionExpiresAt;
       }
 
       await persistRefreshToken(client, user.id, refreshToken, req);
@@ -111,7 +131,7 @@ router.post(
 
       return res.status(201).json({
         accessToken: signAccessToken(user),
-        user: publicUser(user),
+        user: publicUser(user, access),
       });
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -150,9 +170,15 @@ router.post(
 
     const client = await getClient();
     const refreshToken = generateRefreshToken();
+    let access = buildAccess(user);
 
     try {
       await client.query('BEGIN');
+      if (user.seller_id) {
+        access = await syncSellerAccess(client, user.seller_id, user);
+        user.subscription_status = access.subscriptionStatus;
+        user.subscription_expires_at = access.subscriptionExpiresAt;
+      }
       await persistRefreshToken(client, user.id, refreshToken, req);
       await auditLog(client, {
         userId: user.id,
@@ -171,7 +197,7 @@ router.post(
     setRefreshCookie(res, refreshToken);
     return res.json({
       accessToken: signAccessToken(user),
-      user: publicUser(user),
+      user: publicUser(user, access),
     });
   }),
 );
@@ -179,42 +205,62 @@ router.post(
 router.post(
   '/refresh',
   asyncHandler(async (req, res) => {
-    const token = req.cookies.refreshToken;
+    const token = req.cookies[env.REFRESH_COOKIE_NAME];
     if (!token) {
       return res.status(401).json({ message: 'Refresh token required' });
     }
 
-    const { rows } = await query(
-      `SELECT rt.id AS refresh_token_id,
-              u.id, u.email, u.role,
-              s.id AS seller_id,
-              s.subscription_status
-         FROM refresh_tokens rt
-         JOIN users u ON u.id = rt.user_id
-         LEFT JOIN sellers s ON s.user_id = u.id
-        WHERE rt.token_hash = $1
-          AND rt.revoked_at IS NULL
-          AND rt.expires_at > now()`,
-      [hashRefreshToken(token)],
-    );
+    const client = await getClient();
 
-    const user = rows[0];
-    if (!user) {
-      clearRefreshCookie(res);
-      return res.status(401).json({ message: 'Invalid refresh token' });
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `SELECT rt.id AS refresh_token_id,
+                u.id, u.email, u.role,
+                s.id AS seller_id,
+                s.subscription_status
+           FROM refresh_tokens rt
+           JOIN users u ON u.id = rt.user_id
+           LEFT JOIN sellers s ON s.user_id = u.id
+          WHERE rt.token_hash = $1
+            AND rt.revoked_at IS NULL
+            AND rt.expires_at > now()`,
+        [hashRefreshToken(token)],
+      );
+
+      const user = rows[0];
+      if (!user) {
+        await client.query('ROLLBACK');
+        clearRefreshCookie(res);
+        return res.status(401).json({ message: 'Invalid refresh token' });
+      }
+
+      let access = buildAccess(user);
+      if (user.seller_id) {
+        access = await syncSellerAccess(client, user.seller_id, user);
+        user.subscription_status = access.subscriptionStatus;
+        user.subscription_expires_at = access.subscriptionExpiresAt;
+      }
+
+      await client.query('COMMIT');
+
+      return res.json({
+        accessToken: signAccessToken(user),
+        user: publicUser(user, access),
+      });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
     }
-
-    return res.json({
-      accessToken: signAccessToken(user),
-      user: publicUser(user),
-    });
   }),
 );
 
 router.post(
   '/logout',
   asyncHandler(async (req, res) => {
-    const token = req.cookies.refreshToken;
+    const token = req.cookies[env.REFRESH_COOKIE_NAME];
     if (token) {
       await query(
         `UPDATE refresh_tokens
@@ -231,7 +277,7 @@ router.post(
 );
 
 router.get('/google', (req, res, next) => {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
     return res.status(503).json({ message: 'Google OAuth is not configured' });
   }
 
@@ -242,13 +288,13 @@ router.get('/google', (req, res, next) => {
 });
 
 router.get('/google/callback', (req, res, next) => {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
     return res.status(503).json({ message: 'Google OAuth is not configured' });
   }
 
   return passport.authenticate('google', { session: false }, async (error, user) => {
     if (error || !user) {
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/login?oauth=failed`);
+      return res.redirect(`${env.FRONTEND_URL}/login?oauth=failed`);
     }
 
     const refreshToken = generateRefreshToken();
@@ -265,11 +311,16 @@ router.get('/google/callback', (req, res, next) => {
       [user.id],
     );
     const tokenUser = { ...user, ...sellerResult.rows[0] };
+    if (tokenUser.seller_id) {
+      const access = await syncSellerAccess({ query }, tokenUser.seller_id, tokenUser);
+      tokenUser.subscription_status = access.subscriptionStatus;
+      tokenUser.subscription_expires_at = access.subscriptionExpiresAt;
+    }
     setRefreshCookie(res, refreshToken);
 
     const accessToken = signAccessToken(tokenUser);
     return res.redirect(
-      `${process.env.FRONTEND_URL || 'http://localhost:5173'}/oauth/callback?token=${encodeURIComponent(accessToken)}`,
+      `${env.FRONTEND_URL}/oauth/callback?token=${encodeURIComponent(accessToken)}`,
     );
   })(req, res, next);
 });

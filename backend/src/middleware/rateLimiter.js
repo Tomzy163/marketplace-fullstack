@@ -1,16 +1,17 @@
 const rateLimit = require('express-rate-limit');
+const { env } = require('../config/env');
 
 const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 5,
+  windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+  limit: env.AUTH_RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Too many authentication attempts. Please try again later.' },
 });
 
 const apiRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 300,
+  windowMs: env.API_RATE_LIMIT_WINDOW_MS,
+  limit: env.API_RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
 });

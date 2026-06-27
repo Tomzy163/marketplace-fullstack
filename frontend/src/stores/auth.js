@@ -18,7 +18,15 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isAuthenticated: (state) => Boolean(state.accessToken && state.user),
     isSeller: (state) => state.user?.role === 'seller',
-    hasActiveSubscription: (state) => state.user?.subscriptionStatus === 'active',
+    hasPremiumAccess: (state) =>
+      Boolean(state.user?.hasPremiumAccess) ||
+      ['active', 'trialing', 'admin_override'].includes(state.user?.subscriptionStatus),
+    hasActiveSubscription() {
+      return this.hasPremiumAccess;
+    },
+    isOnTrial: (state) => state.user?.accessSource === 'trial' || state.user?.subscriptionStatus === 'trialing',
+    isAdminPremium: (state) => state.user?.accessSource === 'admin_override' || state.user?.subscriptionStatus === 'admin_override',
+    trialDaysRemaining: (state) => state.user?.trialDaysRemaining ?? null,
   },
   actions: {
     persist(session) {

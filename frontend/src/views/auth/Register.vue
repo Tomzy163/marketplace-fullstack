@@ -50,7 +50,7 @@ async function submit() {
     }
 
     await auth.register(payload);
-    router.push(isSeller.value ? '/seller/subscribe' : '/');
+    router.push(isSeller.value && auth.hasPremiumAccess ? '/seller/dashboard' : isSeller.value ? '/seller/subscribe' : '/');
   } catch (err) {
     error.value = formatApiError(err, 'Registration failed');
   } finally {

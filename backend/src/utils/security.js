@@ -1,11 +1,14 @@
 const crypto = require('crypto');
+const { env } = require('../config/env');
 
 function verifyPaystackSignature(rawBody, signature) {
-  if (!process.env.PAYSTACK_SECRET_KEY || !signature) return false;
+  if (!env.PAYSTACK_SECRET_KEY || !signature || !/^[a-f0-9]+$/i.test(String(signature))) {
+    return false;
+  }
 
   const expected = Buffer.from(
     crypto
-      .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY)
+      .createHmac('sha512', env.PAYSTACK_SECRET_KEY)
       .update(rawBody)
       .digest('hex'),
     'hex',

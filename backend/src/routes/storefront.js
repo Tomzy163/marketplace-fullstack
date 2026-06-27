@@ -31,7 +31,19 @@ async function withStorefrontTenant(slug, handler) {
       `SELECT id, store_name, slug, subscription_status, verified_at
          FROM sellers
         WHERE slug = $1
-          AND subscription_status = 'active'`,
+          AND (
+            subscription_status IN ('active', 'admin_override')
+            OR (
+              subscription_status = 'trialing'
+              AND EXISTS (
+                SELECT 1
+                  FROM subscriptions sub
+                 WHERE sub.seller_id = sellers.id
+                   AND sub.status = 'trialing'
+                   AND sub.expires_at > now()
+              )
+            )
+          )`,
       [slug],
     );
 

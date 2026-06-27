@@ -64,6 +64,7 @@ router.get(
 
     res.json({
       seller: seller.rows[0],
+      subscription: req.subscriptionAccess,
       metrics: {
         products: totals.rows[0]?.products || 0,
         orders: totals.rows[0]?.orders || 0,

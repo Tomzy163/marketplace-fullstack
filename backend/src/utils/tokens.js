@@ -1,8 +1,6 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-
-const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '15m';
-const REFRESH_TOKEN_DAYS = Number(process.env.REFRESH_TOKEN_DAYS || 7);
+const { env } = require('../config/env');
 
 function accessPayload(user) {
   return {
@@ -14,13 +12,13 @@ function accessPayload(user) {
 }
 
 function signAccessToken(user) {
-  return jwt.sign(accessPayload(user), process.env.JWT_SECRET, {
-    expiresIn: ACCESS_TOKEN_TTL,
+  return jwt.sign(accessPayload(user), env.JWT_SECRET, {
+    expiresIn: env.ACCESS_TOKEN_TTL,
   });
 }
 
 function verifyAccessToken(token) {
-  return jwt.verify(token, process.env.JWT_SECRET);
+  return jwt.verify(token, env.JWT_SECRET);
 }
 
 function generateRefreshToken() {
@@ -33,22 +31,32 @@ function hashRefreshToken(token) {
 
 function refreshExpiry() {
   const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_DAYS);
+  expiresAt.setDate(expiresAt.getDate() + env.REFRESH_TOKEN_DAYS);
   return expiresAt;
 }
 
 function setRefreshCookie(res, token) {
-  res.cookie('refreshToken', token, {
+  const options = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
+    secure: env.REFRESH_COOKIE_SECURE,
+    sameSite: env.REFRESH_COOKIE_SAMESITE,
+    maxAge: env.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
     path: '/api/auth',
-  });
+  };
+
+  if (env.REFRESH_COOKIE_DOMAIN) {
+    options.domain = env.REFRESH_COOKIE_DOMAIN;
+  }
+
+  res.cookie(env.REFRESH_COOKIE_NAME, token, options);
 }
 
 function clearRefreshCookie(res) {
-  res.clearCookie('refreshToken', { path: '/api/auth' });
+  const options = { path: '/api/auth' };
+  if (env.REFRESH_COOKIE_DOMAIN) {
+    options.domain = env.REFRESH_COOKIE_DOMAIN;
+  }
+  res.clearCookie(env.REFRESH_COOKIE_NAME, options);
 }
 
 module.exports = {

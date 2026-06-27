@@ -1,8 +1,13 @@
 const Joi = require('joi');
 const router = require('express').Router();
+const { env } = require('../config/env');
 const asyncHandler = require('../middleware/asyncHandler');
 const validate = require('../middleware/validate');
 const { auditLog } = require('../services/auditService');
+const {
+  currentSubscription,
+  syncSellerAccess,
+} = require('../services/subscriptionService');
 const { initializeTransaction, disableSubscription } = require('../services/paystackService');
 
 const initializeSchema = Joi.object({
@@ -12,18 +17,13 @@ const initializeSchema = Joi.object({
 router.get(
   '/current',
   asyncHandler(async (req, res) => {
-    const { rows } = await req.db.query(
-      `SELECT sub.id, sub.status, sub.expires_at, sub.paystack_subscription_code,
-              p.id AS plan_id, p.name AS plan_name, p.price, p.features
-         FROM subscriptions sub
-         JOIN plans p ON p.id = sub.plan_id
-        WHERE sub.seller_id = $1
-        ORDER BY sub.created_at DESC
-        LIMIT 1`,
-      [req.user.sellerId],
-    );
+    const current = await currentSubscription(req.db, req.user.sellerId, req.user);
 
-    res.json(rows[0] || null);
+    res.json({
+      ...(current.subscription || {}),
+      access: current.access,
+      subscription: current.subscription,
+    });
   }),
 );
 
@@ -52,19 +52,54 @@ router.post(
     );
 
     let payment = null;
-    if (process.env.PAYSTACK_SECRET_KEY) {
-      payment = await initializeTransaction({
+    let activatedLocally = false;
+
+    if (!env.PAYSTACK_SECRET_KEY && env.isProduction && Number(plan.price) > 0) {
+      return res.status(503).json({ message: 'Payment provider is not configured' });
+    }
+
+    if (env.PAYSTACK_SECRET_KEY && Number(plan.price) > 0) {
+      const payload = {
         email: req.user.email,
         amount: Math.round(Number(plan.price) * 100),
+        currency: env.PAYSTACK_CURRENCY,
         plan: plan.paystack_plan_code || undefined,
-        callback_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/seller/subscribe`,
+        callback_url: `${env.FRONTEND_URL}/seller/subscribe`,
         metadata: {
           type: 'subscription',
           sellerId: req.user.sellerId,
           planId: plan.id,
           subscriptionId: subscription.rows[0].id,
         },
+      };
+
+      if (env.PAYSTACK_SPLIT_CODE) {
+        payload.split_code = env.PAYSTACK_SPLIT_CODE;
+      }
+
+      payment = await initializeTransaction({
+        ...payload,
       });
+    }
+
+    if (!payment && (!env.isProduction || Number(plan.price) === 0)) {
+      activatedLocally = true;
+      await req.db.query(
+        `UPDATE subscriptions
+            SET status = 'active',
+                expires_at = now() + interval '30 days',
+                updated_at = now()
+          WHERE id = $1`,
+        [subscription.rows[0].id],
+      );
+      await req.db.query(
+        `UPDATE sellers
+            SET subscription_status = 'active',
+                plan_id = $2,
+                updated_at = now()
+          WHERE id = $1`,
+        [req.user.sellerId, plan.id],
+      );
     }
 
     await auditLog(req.db, {
@@ -72,12 +107,18 @@ router.post(
       action: 'subscription.initialize',
       resource: 'subscriptions',
       resourceId: subscription.rows[0].id,
-      metadata: { planId: plan.id },
+      metadata: { planId: plan.id, activatedLocally },
     });
 
+    const access = await syncSellerAccess(req.db, req.user.sellerId, req.user);
+
     return res.status(201).json({
-      subscription: subscription.rows[0],
+      subscription: {
+        ...subscription.rows[0],
+        status: activatedLocally ? 'active' : subscription.rows[0].status,
+      },
       payment,
+      access,
     });
   }),
 );
@@ -86,10 +127,10 @@ router.post(
   '/cancel',
   asyncHandler(async (req, res) => {
     const { rows } = await req.db.query(
-      `SELECT id, paystack_subscription_code, paystack_email_token
+      `SELECT id, status, paystack_subscription_code, paystack_email_token
          FROM subscriptions
         WHERE seller_id = $1
-          AND status IN ('active', 'trialing')
+          AND status IN ('active', 'trialing', 'admin_override')
         ORDER BY created_at DESC
         LIMIT 1`,
       [req.user.sellerId],
@@ -100,8 +141,12 @@ router.post(
       return res.status(404).json({ message: 'Active subscription not found' });
     }
 
+    if (subscription.status === 'admin_override') {
+      return res.status(403).json({ message: 'Administrative premium access is managed by platform configuration' });
+    }
+
     if (
-      process.env.PAYSTACK_SECRET_KEY &&
+      env.PAYSTACK_SECRET_KEY &&
       subscription.paystack_subscription_code &&
       subscription.paystack_email_token
     ) {
@@ -120,7 +165,8 @@ router.post(
     );
     await req.db.query(
       `UPDATE sellers
-          SET subscription_status = 'expired'
+          SET subscription_status = 'cancelled',
+              updated_at = now()
         WHERE id = $1`,
       [req.user.sellerId],
     );
