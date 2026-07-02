@@ -40,7 +40,11 @@ if (env.TRUST_PROXY) {
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
-app.use(cors(corsOptions));
+// app.use(cors(corsOptions));
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:3000'], // add your frontend URL
+  credentials: true
+}));
 app.use(cookieParser());
 app.use(passport.initialize());
 

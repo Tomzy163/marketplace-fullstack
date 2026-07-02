@@ -19,7 +19,7 @@ const schema = Joi.object({
   JWT_SECRET: Joi.string().min(32).when('NODE_ENV', {
     is: 'production',
     then: Joi.invalid('change-me').required(),
-    otherwise: Joi.default('dev-only-change-me-to-a-strong-random-secret'),
+    otherwise: Joi.string().default('dev-only-change-me-to-a-strong-random-secret'),
   }),
   ACCESS_TOKEN_TTL: Joi.string().default('15m'),
   REFRESH_TOKEN_DAYS: Joi.number().integer().min(1).max(30).default(7),
